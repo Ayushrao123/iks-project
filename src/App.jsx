@@ -1,4 +1,4 @@
-import{useState,useEffect,useRef,useMemo}from'react';
+import{useState,useEffect,useRef}from'react';
 import{motion,AnimatePresence}from'framer-motion';
 import{Globe,Sigma,Leaf,Telescope,Compass}from'lucide-react';
 import Timeline from'./Timeline';
@@ -48,18 +48,87 @@ function Cursor(){
   return<><div ref={d} className="cursor-dot"/><div ref={r} className="cursor-ring"/></>;
 }
 
-function Embers(){
-  const E=useMemo(()=>Array.from({length:25},(_,i)=>({id:i,left:Math.random()*100,size:3+Math.random()*5,dur:4+Math.random()*8,delay:Math.random()*6,dx:(Math.random()-.5)*80})),[]);
-  return(
-    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
-      {E.map(e=>(
-        <motion.div key={e.id} style={{left:`${e.left}%`,bottom:-20,width:e.size,height:e.size,borderRadius:'50%',background:'radial-gradient(circle,#fbbf24,#f97316)',boxShadow:`0 0 ${e.size*3}px ${e.size}px rgba(249,115,22,0.6)`,position:'absolute'}}
-          animate={{y:[0,-(600+Math.random()*400)],x:[0,e.dx],opacity:[0,0.9,0.6,0]}}
-          transition={{duration:e.dur,repeat:Infinity,delay:e.delay,ease:'easeOut'}}/>
-      ))}
-    </div>
-  );
+function CanvasBg(){
+  const cvs=useRef(null);
+  const mouse=useRef({x:-9999,y:-9999});
+  useEffect(()=>{
+    const c=cvs.current;
+    if(!c)return;
+    const ctx=c.getContext('2d');
+    let W,H,pts,raf;
+    const N=55;
+    const resize=()=>{
+      W=c.width=window.innerWidth;
+      H=c.height=window.innerHeight;
+      pts=Array.from({length:N},()=>({
+        x:Math.random()*W, y:Math.random()*H,
+        vx:(Math.random()-.5)*0.35, vy:(Math.random()-.5)*0.35,
+        r:1+Math.random()*2.2,
+        a:Math.random()*Math.PI*2,
+      }));
+    };
+    resize();
+    window.addEventListener('resize',resize);
+    const mv=e=>{const t=e.touches?e.touches[0]:e; mouse.current={x:t.clientX,y:t.clientY};};
+    window.addEventListener('mousemove',mv);
+    window.addEventListener('touchmove',mv,{passive:true});
+    const CONN=140, MCONN=180;
+    const draw=()=>{
+      ctx.clearRect(0,0,W,H);
+      // update positions
+      for(const p of pts){
+        p.x+=p.vx; p.y+=p.vy;
+        if(p.x<0)p.x=W; if(p.x>W)p.x=0;
+        if(p.y<0)p.y=H; if(p.y>H)p.y=0;
+        p.a+=0.008;
+      }
+      // draw connecting lines between close particles
+      for(let i=0;i<pts.length;i++){
+        for(let j=i+1;j<pts.length;j++){
+          const dx=pts[i].x-pts[j].x, dy=pts[i].y-pts[j].y;
+          const d=Math.sqrt(dx*dx+dy*dy);
+          if(d<CONN){
+            ctx.beginPath();
+            ctx.moveTo(pts[i].x,pts[i].y);
+            ctx.lineTo(pts[j].x,pts[j].y);
+            ctx.strokeStyle=`rgba(212,175,55,${0.12*(1-d/CONN)})`;
+            ctx.lineWidth=0.6;
+            ctx.stroke();
+          }
+        }
+        // mouse connections
+        const mx=pts[i].x-mouse.current.x, my=pts[i].y-mouse.current.y;
+        const md=Math.sqrt(mx*mx+my*my);
+        if(md<MCONN){
+          ctx.beginPath();
+          ctx.moveTo(pts[i].x,pts[i].y);
+          ctx.lineTo(mouse.current.x,mouse.current.y);
+          ctx.strokeStyle=`rgba(249,115,22,${0.35*(1-md/MCONN)})`;
+          ctx.lineWidth=0.8;
+          ctx.stroke();
+        }
+      }
+      // draw orbs
+      for(const p of pts){
+        const pulse=0.5+0.5*Math.sin(p.a);
+        ctx.beginPath();
+        ctx.arc(p.x,p.y,p.r*(1+0.4*pulse),0,Math.PI*2);
+        ctx.fillStyle=`rgba(212,175,55,${0.55+0.35*pulse})`;
+        ctx.fill();
+      }
+      raf=requestAnimationFrame(draw);
+    };
+    draw();
+    return()=>{
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize',resize);
+      window.removeEventListener('mousemove',mv);
+      window.removeEventListener('touchmove',mv);
+    };
+  },[]);
+  return<canvas ref={cvs} className="fixed inset-0 z-0 pointer-events-none" style={{width:'100%',height:'100%'}}/>;
 }
+
 
 function Shatkona({size=300}){
   const c=size/2,R=size*0.38;
@@ -247,7 +316,7 @@ export default function App(){
   return(
     <div className="relative min-h-screen" style={{background:'radial-gradient(ellipse at 50% 85%,#3a0e00 0%,#1a0500 40%,#0e0800 100%)'}}>
       <Cursor/>
-      <Embers/>
+      <CanvasBg/>
       <AnimatePresence>{awake&&<ShatkonaOverlay t={t} onClose={()=>setAwake(false)}/>}</AnimatePresence>
       <div className="relative z-10">
         <Navbar hi={hi} setHi={setHi} t={t}/>
